@@ -1,9 +1,13 @@
 import { Leaf, Recycle } from "lucide-react";
 import heroImage from "@/assets/hero-ewaste.jpg";
+import { ThemeToggle } from "./ThemeToggle";
 
 export const Hero = () => {
   return (
     <section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden">
+      <div className="absolute top-6 right-6 z-20 animate-fade-in">
+        <ThemeToggle />
+      </div>
       <div 
         className="absolute inset-0 z-0 opacity-20"
         style={{

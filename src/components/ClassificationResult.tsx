@@ -1,13 +1,15 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Battery, Cpu, Box, Cable, Monitor, Layers, AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { Battery, Cpu, Box, Cable, Monitor, Layers, AlertTriangle, CheckCircle2, Info, PieChart } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { PieChart as RechartsePieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
 interface ClassificationData {
   category: string;
   confidence: number;
   item: string;
   materials: string[];
+  material_percentages: Record<string, number>;
   recycling_guidance: string;
   hazards: string[];
   disposal_steps: string[];
@@ -36,9 +38,26 @@ const categoryColors: Record<string, string> = {
   "Mixed Electronics": "bg-green-500",
 };
 
+const CHART_COLORS = [
+  "hsl(142, 76%, 36%)",
+  "hsl(174, 72%, 56%)",
+  "hsl(45, 93%, 47%)",
+  "hsl(262, 83%, 58%)",
+  "hsl(221, 83%, 53%)",
+  "hsl(348, 83%, 47%)",
+  "hsl(173, 58%, 39%)",
+  "hsl(43, 74%, 49%)",
+];
+
 export const ClassificationResult = ({ classification, image }: ClassificationResultProps) => {
   const Icon = categoryIcons[classification.category] || Layers;
   const colorClass = categoryColors[classification.category] || "bg-primary";
+
+  const chartData = Object.entries(classification.material_percentages || {}).map(([name, value], index) => ({
+    name,
+    value,
+    color: CHART_COLORS[index % CHART_COLORS.length],
+  }));
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -92,6 +111,52 @@ export const ClassificationResult = ({ classification, image }: ClassificationRe
           </div>
         </div>
       </Card>
+
+      {chartData.length > 0 && (
+        <Card className="p-6 bg-gradient-card border-2">
+          <div className="flex items-start gap-3 mb-4">
+            <PieChart className="w-5 h-5 text-primary mt-1 flex-shrink-0" />
+            <h4 className="font-semibold text-primary text-lg">Material Breakdown</h4>
+          </div>
+          
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsePieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, value }) => `${name}: ${value.toFixed(1)}%`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                  animationBegin={0}
+                  animationDuration={800}
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number) => `${value.toFixed(1)}%`}
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "var(--radius)",
+                    color: "hsl(var(--foreground))",
+                  }}
+                />
+                <Legend 
+                  verticalAlign="bottom" 
+                  height={36}
+                  formatter={(value) => <span className="text-sm">{value}</span>}
+                />
+              </RechartsePieChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
 
       {classification.hazards.length > 0 && (
         <Card className="p-6 border-2 border-destructive/20 bg-destructive/5">

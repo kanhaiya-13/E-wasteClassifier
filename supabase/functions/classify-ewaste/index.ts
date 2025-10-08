@@ -88,6 +88,11 @@ Be precise and educational.`;
                     items: { type: "string" },
                     description: "List of materials present"
                   },
+                  material_percentages: {
+                    type: "object",
+                    description: "Estimated percentage breakdown of materials (keys are material names, values are percentages that sum to 100)",
+                    additionalProperties: { type: "number" }
+                  },
                   recycling_guidance: {
                     type: "string",
                     description: "Detailed recycling recommendations"
@@ -103,7 +108,7 @@ Be precise and educational.`;
                     description: "Step-by-step disposal instructions"
                   }
                 },
-                required: ["category", "confidence", "item", "materials", "recycling_guidance", "hazards", "disposal_steps"],
+                required: ["category", "confidence", "item", "materials", "material_percentages", "recycling_guidance", "hazards", "disposal_steps"],
                 additionalProperties: false
               }
             }
