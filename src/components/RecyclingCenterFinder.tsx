@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Search, Navigation, Phone, Clock, ExternalLink } from "lucide-react";
+import { MapPin, Search, Navigation, Phone, Clock, ExternalLink, AlertCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface RecyclingCenter {
   id: string;
@@ -13,85 +14,238 @@ interface RecyclingCenter {
   acceptedItems: string[];
   phone?: string;
   hours?: string;
-  rating?: number;
+  lat: number;
+  lon: number;
+  website?: string;
 }
 
-// Mock data - in production, this would come from an API
-const mockCenters: RecyclingCenter[] = [
-  {
-    id: "1",
-    name: "Green Planet E-Waste Recycling",
-    address: "123 Eco Street, Downtown",
-    distance: "1.2 km",
-    acceptedItems: ["Batteries", "Circuit Boards", "Displays", "Metals"],
-    phone: "+1-555-0123",
-    hours: "Mon-Sat: 9AM-6PM",
-    rating: 4.8,
-  },
-  {
-    id: "2",
-    name: "TechCycle Solutions",
-    address: "456 Green Avenue, Tech Park",
-    distance: "3.5 km",
-    acceptedItems: ["Circuit Boards", "Plastics", "Mixed Electronics"],
-    phone: "+1-555-0456",
-    hours: "Mon-Fri: 8AM-5PM",
-    rating: 4.6,
-  },
-  {
-    id: "3",
-    name: "EcoWaste Hub",
-    address: "789 Recycle Road, Industrial Zone",
-    distance: "5.8 km",
-    acceptedItems: ["Batteries", "Displays", "Metals", "Plastics"],
-    phone: "+1-555-0789",
-    hours: "Daily: 7AM-7PM",
-    rating: 4.9,
-  },
-  {
-    id: "4",
-    name: "Electronics Recycling Center",
-    address: "321 Sustainability Lane, City Center",
-    distance: "7.2 km",
-    acceptedItems: ["All E-Waste Types"],
-    phone: "+1-555-0321",
-    hours: "Mon-Sat: 10AM-8PM",
-    rating: 4.7,
-  },
-];
+interface Coordinates {
+  lat: number;
+  lon: number;
+}
 
 export const RecyclingCenterFinder = () => {
   const [location, setLocation] = useState("");
   const [centers, setCenters] = useState<RecyclingCenter[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [userCoords, setUserCoords] = useState<Coordinates | null>(null);
+  const { toast } = useToast();
+
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): string => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+    
+    if (distance < 1) {
+      return `${Math.round(distance * 1000)} m`;
+    }
+    return `${distance.toFixed(1)} km`;
+  };
+
+  // Geocode address to coordinates using Nominatim
+  const geocodeAddress = async (address: string): Promise<Coordinates | null> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+        {
+          headers: {
+            'User-Agent': 'SmartESort/1.0'
+          }
+        }
+      );
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        return {
+          lat: parseFloat(data[0].lat),
+          lon: parseFloat(data[0].lon)
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return null;
+    }
+  };
+
+  // Search for recycling centers using Overpass API (OpenStreetMap)
+  const searchRecyclingCenters = async (coords: Coordinates) => {
+    setIsSearching(true);
+    
+    try {
+      // Overpass API query for recycling centers within 25km radius
+      const radius = 25000; // 25km in meters
+      const query = `
+        [out:json][timeout:25];
+        (
+          node["amenity"="recycling"]["recycling_type"="centre"](around:${radius},${coords.lat},${coords.lon});
+          node["amenity"="waste_disposal"](around:${radius},${coords.lat},${coords.lon});
+          node["shop"="electronics"]["recycling"="yes"](around:${radius},${coords.lat},${coords.lon});
+          way["amenity"="recycling"]["recycling_type"="centre"](around:${radius},${coords.lat},${coords.lon});
+          way["amenity"="waste_disposal"](around:${radius},${coords.lat},${coords.lon});
+        );
+        out center;
+      `;
+
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: query
+      });
+
+      const data = await response.json();
+      
+      if (data.elements && data.elements.length > 0) {
+        const foundCenters: RecyclingCenter[] = data.elements
+          .map((element: any) => {
+            const lat = element.lat || element.center?.lat;
+            const lon = element.lon || element.center?.lon;
+            
+            if (!lat || !lon) return null;
+
+            const tags = element.tags || {};
+            const name = tags.name || tags.operator || "Recycling Center";
+            const street = tags['addr:street'] || '';
+            const houseNumber = tags['addr:housenumber'] || '';
+            const city = tags['addr:city'] || '';
+            const address = [houseNumber, street, city].filter(Boolean).join(' ') || 'Address not available';
+            
+            // Determine accepted items based on tags
+            const acceptedItems: string[] = [];
+            if (tags.recycling_accepts) {
+              acceptedItems.push(...tags.recycling_accepts.split(';'));
+            }
+            if (tags['recycling:batteries'] === 'yes') acceptedItems.push('Batteries');
+            if (tags['recycling:electrical_items'] === 'yes') acceptedItems.push('Electronics');
+            if (tags['recycling:small_appliances'] === 'yes') acceptedItems.push('Small Appliances');
+            if (tags['recycling:computers'] === 'yes') acceptedItems.push('Computers');
+            if (tags['recycling:mobile_phones'] === 'yes') acceptedItems.push('Mobile Phones');
+            if (acceptedItems.length === 0) acceptedItems.push('E-Waste');
+
+            return {
+              id: element.id.toString(),
+              name: name,
+              address: address,
+              distance: calculateDistance(coords.lat, coords.lon, lat, lon),
+              acceptedItems: [...new Set(acceptedItems)], // Remove duplicates
+              phone: tags.phone || tags['contact:phone'],
+              hours: tags.opening_hours,
+              lat: lat,
+              lon: lon,
+              website: tags.website || tags['contact:website']
+            };
+          })
+          .filter((center): center is RecyclingCenter => center !== null)
+          .sort((a, b) => {
+            // Sort by distance
+            const distA = parseFloat(a.distance);
+            const distB = parseFloat(b.distance);
+            return distA - distB;
+          })
+          .slice(0, 10); // Limit to 10 results
+
+        if (foundCenters.length > 0) {
+          setCenters(foundCenters);
+          toast({
+            title: "Centers Found!",
+            description: `Found ${foundCenters.length} recycling centers near you`,
+          });
+        } else {
+          setCenters([]);
+          toast({
+            title: "No Centers Found",
+            description: "Try expanding your search area or check nearby cities",
+            variant: "destructive",
+          });
+        }
+      } else {
+        setCenters([]);
+        toast({
+          title: "No Centers Found",
+          description: "No recycling centers found in your area. Try a different location.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error searching recycling centers:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to search for recycling centers. Please try again.",
+        variant: "destructive",
+      });
+      setCenters([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const handleSearch = async () => {
+    if (!location.trim()) {
+      toast({
+        title: "Location Required",
+        description: "Please enter a location to search",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSearching(true);
-    // Simulate API call
-    setTimeout(() => {
-      setCenters(mockCenters);
+    const coords = await geocodeAddress(location);
+    
+    if (coords) {
+      setUserCoords(coords);
+      await searchRecyclingCenters(coords);
+    } else {
+      toast({
+        title: "Location Not Found",
+        description: "Could not find the specified location. Please try a different address.",
+        variant: "destructive",
+      });
       setIsSearching(false);
-    }, 800);
+    }
   };
 
   const handleGetCurrentLocation = () => {
     if ("geolocation" in navigator) {
+      setIsSearching(true);
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation(`${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
-          handleSearch();
+        async (position) => {
+          const coords = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          };
+          setLocation(`${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`);
+          setUserCoords(coords);
+          await searchRecyclingCenters(coords);
         },
         (error) => {
           console.error("Error getting location:", error);
-          // Use default mock location
-          setLocation("Current Location");
-          handleSearch();
+          toast({
+            title: "Location Error",
+            description: "Could not get your location. Please enter it manually.",
+            variant: "destructive",
+          });
+          setIsSearching(false);
         }
       );
     } else {
-      setLocation("Current Location");
-      handleSearch();
+      toast({
+        title: "Geolocation Not Supported",
+        description: "Your browser doesn't support geolocation. Please enter your location manually.",
+        variant: "destructive",
+      });
     }
+  };
+
+  const openInMaps = (center: RecyclingCenter) => {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lon}`;
+    window.open(url, '_blank');
   };
 
   return (
@@ -173,12 +327,6 @@ export const RecyclingCenterFinder = () => {
                         <Badge className="bg-primary/10 text-primary border-primary/20">
                           {center.distance}
                         </Badge>
-                        {center.rating && (
-                          <div className="flex items-center gap-1 text-sm">
-                            <span className="text-yellow-500">★</span>
-                            <span className="font-semibold">{center.rating}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -207,14 +355,26 @@ export const RecyclingCenterFinder = () => {
                   </div>
 
                   <div className="flex md:flex-col gap-2">
-                    <Button variant="outline" size="sm" className="gap-2 flex-1">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="gap-2 flex-1"
+                      onClick={() => openInMaps(center)}
+                    >
                       <Navigation className="w-4 h-4" />
                       Get Directions
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-2 flex-1">
-                      <ExternalLink className="w-4 h-4" />
-                      View Details
-                    </Button>
+                    {center.website && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-2 flex-1"
+                        onClick={() => window.open(center.website, '_blank')}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Website
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -227,9 +387,27 @@ export const RecyclingCenterFinder = () => {
         <Card className="p-12 text-center border-dashed">
           <MapPin className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
           <h3 className="text-xl font-semibold mb-2">Search for Recycling Centers</h3>
-          <p className="text-muted-foreground">
-            Enter your location to find certified e-waste collection centers nearby
+          <p className="text-muted-foreground mb-4">
+            Enter your location to find real e-waste collection centers nearby
           </p>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <AlertCircle className="w-4 h-4" />
+            <span>Powered by OpenStreetMap data</span>
+          </div>
+        </Card>
+      )}
+
+      {isSearching && (
+        <Card className="p-12 text-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <div>
+              <h3 className="text-xl font-semibold mb-2">Searching...</h3>
+              <p className="text-muted-foreground">
+                Finding recycling centers in your area
+              </p>
+            </div>
+          </div>
         </Card>
       )}
     </div>

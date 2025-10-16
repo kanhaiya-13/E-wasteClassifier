@@ -14,25 +14,38 @@ The application has been enhanced from a single-feature e-waste classifier to a 
 
 **Location:** `src/components/RecyclingCenterFinder.tsx`
 
-A complete location-based service to help users find certified e-waste collection centers.
+A complete location-based service using **real data from OpenStreetMap** to help users find actual certified e-waste collection centers.
 
 **Features:**
-- Search by address, city, or zip code
-- GPS-based "Use My Location" functionality
+- **Real-time Data:** Uses OpenStreetMap's Overpass API to find actual recycling centers
+- **Geocoding:** Converts any address to coordinates using Nominatim API
+- **GPS Location:** GPS-based "Use My Location" functionality with browser geolocation
+- **Smart Search:** Searches within 25km radius and sorts by distance
+- **Accurate Distance Calculation:** Haversine formula for precise distance measurements
 - Display of nearby centers with:
-  - Distance from user
-  - Accepted e-waste types
-  - Ratings (out of 5 stars)
-  - Contact information (phone numbers)
-  - Operating hours
-  - Interactive map directions (Get Directions button)
+  - Real addresses from OpenStreetMap data
+  - Distance from user (in meters or kilometers)
+  - Accepted e-waste types (batteries, electronics, computers, phones, etc.)
+  - Contact information (phone numbers when available)
+  - Operating hours (when available)
+  - Website links (when available)
+  - Interactive map directions via Google Maps
 - Responsive card layout with hover effects
-- Sorted results by distance
+- Up to 10 results, sorted by distance
+
+**Technical Implementation:**
+- **Overpass API:** Queries OpenStreetMap for recycling centers, waste disposal sites, and electronics stores with recycling
+- **Nominatim API:** Geocodes user-entered addresses
+- **Haversine Formula:** Calculates accurate distances between coordinates
+- **Error Handling:** Comprehensive error handling with user-friendly toast notifications
+- **No API Keys Required:** Uses free, open-source APIs
 
 **User Benefits:**
-- Makes it easy to find where to recycle
-- Saves time with instant access to contact details
+- Find **real, existing** recycling centers in their area
+- Get accurate distances and directions
+- Access up-to-date contact information
 - Reduces barriers to proper e-waste disposal
+- Works anywhere in the world with OpenStreetMap data
 
 ---
 
